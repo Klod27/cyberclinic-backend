@@ -1,0 +1,108 @@
+{
+    "report_generated": "2026-03-15T16:57:34.944684",
+    "engine": "CyberClinic Autonomous Compliance Engine",
+    "security_score": 75,
+    "summary": {
+        "total_controls": 12,
+        "passed": 11,
+        "failed": 1
+    },
+    "findings": [
+        {
+            "issue": "Access Control Policy",
+            "service": "Compliance Framework",
+            "severity": "HIGH",
+            "control_id": "AC-1",
+            "status": "PASS",
+            "description": "Access control policies must be defined and enforced"
+        },
+        {
+            "issue": "Least Privilege Enforcement",
+            "service": "Compliance Framework",
+            "severity": "HIGH",
+            "control_id": "AC-2",
+            "status": "PASS",
+            "description": "Users should only have minimum required permissions"
+        },
+        {
+            "issue": "Multi-Factor Authentication",
+            "service": "Compliance Framework",
+            "severity": "CRITICAL",
+            "control_id": "IA-2",
+            "status": "FAIL",
+            "description": "MFA must be enabled for privileged accounts"
+        },
+        {
+            "issue": "Credential Management",
+            "service": "Compliance Framework",
+            "severity": "HIGH",
+            "control_id": "IA-5",
+            "status": "PASS",
+            "description": "Strong password and credential policies must be enforced"
+        },
+        {
+            "issue": "Audit Logging",
+            "service": "Compliance Framework",
+            "severity": "HIGH",
+            "control_id": "AU-2",
+            "status": "PASS",
+            "description": "System activity logging must be enabled"
+        },
+        {
+            "issue": "Log Monitoring",
+            "service": "Compliance Framework",
+            "severity": "MEDIUM",
+            "control_id": "AU-6",
+            "status": "PASS",
+            "description": "Logs must be reviewed and monitored"
+        },
+        {
+            "issue": "Encryption in Transit",
+            "service": "Compliance Framework",
+            "severity": "CRITICAL",
+            "control_id": "SC-12",
+            "status": "PASS",
+            "description": "TLS encryption must protect data in transit"
+        },
+        {
+            "issue": "Encryption at Rest",
+            "service": "Compliance Framework",
+            "severity": "CRITICAL",
+            "control_id": "SC-13",
+            "status": "PASS",
+            "description": "Sensitive data must be encrypted at rest"
+        },
+        {
+            "issue": "Secure Configuration Baseline",
+            "service": "Compliance Framework",
+            "severity": "MEDIUM",
+            "control_id": "CM-2",
+            "status": "PASS",
+            "description": "Systems must follow secure configuration standards"
+        },
+        {
+            "issue": "Configuration Enforcement",
+            "service": "Compliance Framework",
+            "severity": "MEDIUM",
+            "control_id": "CM-6",
+            "status": "PASS",
+            "description": "Security configurations must be enforced"
+        },
+        {
+            "issue": "Intrusion Detection",
+            "service": "Compliance Framework",
+            "severity": "HIGH",
+            "control_id": "SI-4",
+            "status": "PASS",
+            "description": "Intrusion detection monitoring must be active"
+        },
+        {
+            "issue": "Incident Response Capability",
+            "service": "Compliance Framework",
+            "severity": "MEDIUM",
+            "control_id": "IR-4",
+            "status": "PASS",
+            "description": "Incident response procedures must exist"
+        }
+    ]
+}
