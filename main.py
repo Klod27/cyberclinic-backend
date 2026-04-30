@@ -4,10 +4,11 @@ from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 from datetime import datetime
+
+# Routers
 from team_api import router as team_router
 from subscription_api import router as subscription_router
 from analytics_api import router as analytics_router
-# Routers
 from organization_api import router as org_router
 from automation_api import router as automation_router
 from billing import router as billing_router
@@ -33,7 +34,7 @@ from models import AssessmentResult
 Base.metadata.create_all(bind=engine)
 
 # ----------------------------------
-# SECURITY (🔥 GLOBAL FIX FOR SWAGGER)
+# SECURITY
 # ----------------------------------
 security = HTTPBearer()
 
@@ -69,15 +70,20 @@ app.include_router(org_router)
 app.include_router(team_router)
 app.include_router(subscription_router)
 app.include_router(analytics_router)
+
 # ----------------------------------
 # ROOT
 # ----------------------------------
 @app.get("/")
 def root():
-    return {"message": "CyberClinic API running"}
+    return {
+        "message": "CyberClinic API running",
+        "status": "ok",
+        "timestamp": datetime.utcnow()
+    }
 
 # ----------------------------------
-# /me (AUTH TEST)
+# AUTH TEST
 # ----------------------------------
 @app.get("/me")
 def get_me(current_user=Depends(get_current_user)):
@@ -126,19 +132,34 @@ def get_trend(
 # ----------------------------------
 @app.post("/ai-recommendations")
 async def ai_recommendations(data: dict):
+    try:
+        issues = [f.get("issue", "") for f in data.get("findings", [])]
 
-    issues = [f.get("issue", "") for f in data.get("findings", [])]
+        recommendations = generate_recommendations({
+            "issues": issues
+        })
 
-    recommendations = generate_recommendations({
-        "issues": issues
-    })
+        return {"recommendations": recommendations}
 
-    return {"recommendations": recommendations}
+    except Exception as e:
+        return {"error": str(e)}
 
 # ----------------------------------
-# AUTOMATION ENGINE
+# AUTOMATION ENGINE (FIXED + SAFE)
 # ----------------------------------
 @app.get("/automation/run")
 def automation_run():
-    scan_data = run_compliance_scan()
-    return scan_data
+    try:
+        scan_data = run_compliance_scan()
+
+        return {
+            "status": "success",
+            "scan": scan_data,
+            "timestamp": datetime.utcnow()
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
