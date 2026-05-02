@@ -1,9 +1,10 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 from datetime import datetime
+import logging
 
 # Routers
 from team_api import router as team_router
@@ -20,13 +21,16 @@ from hipaa_api import router as hipaa_router
 # AI
 from ai_recommendations import generate_recommendations
 
-# Engine
-from compliance_engine import run_compliance_scan
-
 # Database
 from database import engine, get_db, Base
 import models
 from models import AssessmentResult
+
+# ----------------------------------
+# LOGGING (IMPORTANT FOR RENDER DEBUG)
+# ----------------------------------
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ----------------------------------
 # CREATE DATABASE TABLES
@@ -43,15 +47,19 @@ security = HTTPBearer()
 # ----------------------------------
 app = FastAPI(
     title="CyberClinic Compliance API",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 # ----------------------------------
-# CORS
+# CORS (🔥 FIXED FOR FRONTEND)
 # ----------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://cyberclinicsaas.com",
+        "https://*.vercel.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -65,7 +73,7 @@ app.include_router(billing_router)
 app.include_router(report_router)
 app.include_router(hipaa_router)
 app.include_router(stripe_webhook_router)
-app.include_router(automation_router)
+app.include_router(automation_router)  # ✅ SINGLE SOURCE OF TRUTH
 app.include_router(org_router)
 app.include_router(team_router)
 app.include_router(subscription_router)
@@ -79,6 +87,16 @@ def root():
     return {
         "message": "CyberClinic API running",
         "status": "ok",
+        "timestamp": datetime.utcnow()
+    }
+
+# ----------------------------------
+# HEALTH CHECK (VERY IMPORTANT)
+# ----------------------------------
+@app.get("/health")
+def health_check():
+    return {
+        "status": "healthy",
         "timestamp": datetime.utcnow()
     }
 
@@ -113,19 +131,24 @@ def get_trend(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    results = db.query(AssessmentResult)\
-        .filter(AssessmentResult.organization_id == organization_id)\
-        .order_by(AssessmentResult.created_at)\
-        .all()
+    try:
+        results = db.query(AssessmentResult)\
+            .filter(AssessmentResult.organization_id == organization_id)\
+            .order_by(AssessmentResult.created_at)\
+            .all()
 
-    return [
-        {
-            "date": r.created_at.strftime("%Y-%m-%d"),
-            "score": r.overall_score,
-            "risk": r.risk_level
-        }
-        for r in results
-    ]
+        return [
+            {
+                "date": r.created_at.strftime("%Y-%m-%d"),
+                "score": r.overall_score,
+                "risk": r.risk_level
+            }
+            for r in results
+        ]
+
+    except Exception as e:
+        logger.error(f"Analytics error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Analytics failed")
 
 # ----------------------------------
 # AI RECOMMENDATIONS
@@ -139,27 +162,11 @@ async def ai_recommendations(data: dict):
             "issues": issues
         })
 
-        return {"recommendations": recommendations}
-
-    except Exception as e:
-        return {"error": str(e)}
-
-# ----------------------------------
-# AUTOMATION ENGINE (FIXED + SAFE)
-# ----------------------------------
-@app.get("/automation/run")
-def automation_run():
-    try:
-        scan_data = run_compliance_scan()
-
         return {
             "status": "success",
-            "scan": scan_data,
-            "timestamp": datetime.utcnow()
+            "recommendations": recommendations
         }
 
     except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+        logger.error(f"AI error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
