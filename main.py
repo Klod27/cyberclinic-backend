@@ -27,13 +27,13 @@ import models
 from models import AssessmentResult
 
 # ----------------------------------
-# LOGGING (IMPORTANT FOR RENDER DEBUG)
+# LOGGING
 # ----------------------------------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ----------------------------------
-# CREATE DATABASE TABLES
+# DATABASE
 # ----------------------------------
 Base.metadata.create_all(bind=engine)
 
@@ -51,15 +51,11 @@ app = FastAPI(
 )
 
 # ----------------------------------
-# CORS (🔥 FIXED FOR FRONTEND)
+# 🔥 CORS FIX (CRITICAL)
 # ----------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://cyberclinicsaas.com",
-        "https://*.vercel.app"
-    ],
+    allow_origins=["*"],  # ✅ FIX: allow all origins (unblocks Vercel immediately)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -73,7 +69,7 @@ app.include_router(billing_router)
 app.include_router(report_router)
 app.include_router(hipaa_router)
 app.include_router(stripe_webhook_router)
-app.include_router(automation_router)  # ✅ SINGLE SOURCE OF TRUTH
+app.include_router(automation_router)
 app.include_router(org_router)
 app.include_router(team_router)
 app.include_router(subscription_router)
@@ -87,17 +83,17 @@ def root():
     return {
         "message": "CyberClinic API running",
         "status": "ok",
-        "timestamp": datetime.utcnow()
+        "timestamp": datetime.utcnow().isoformat()
     }
 
 # ----------------------------------
-# HEALTH CHECK (VERY IMPORTANT)
+# HEALTH CHECK
 # ----------------------------------
 @app.get("/health")
 def health_check():
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow()
+        "timestamp": datetime.utcnow().isoformat()
     }
 
 # ----------------------------------
