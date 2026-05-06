@@ -16,7 +16,7 @@ router = APIRouter()
 # GET HIPAA QUESTIONS (AUTH ONLY)
 # ----------------------------------
 @router.get("/hipaa/questions")
-def get_questions(user=Depends(get_current_user)):
+def get_questions():
     return hipaa_questions
 
 
@@ -26,8 +26,7 @@ def get_questions(user=Depends(get_current_user)):
 @router.post("/hipaa/submit")
 def submit_assessment(
     data: dict,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
 
     try:
