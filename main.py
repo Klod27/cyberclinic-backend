@@ -28,6 +28,9 @@ from hipaa_api import router as hipaa_router
 from database import engine, get_db, Base
 from models import AssessmentResult
 from hipaa_questions import hipaa_questions
+
+
+Base.metadata.create_all(bind=engine)
 # ----------------------------------
 # LOGGING
 # ----------------------------------
