@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 import logging
 import os
+import models
 import uuid
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.barcharts import VerticalBarChart
@@ -47,8 +48,31 @@ Base.metadata.create_all(bind=engine)
 # ----------------------------------
 app = FastAPI(title="CyberClinic API", version="4.0.0")
 @app.get("/hipaa/questions")
-def get_questions():
-    return {"questions": hipaa_questions}
+def get_questions(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
+    subscription = db.query(models.Subscription).filter(
+        models.Subscription.org_id == current_user.organization_id,
+        models.Subscription.is_active == True
+    ).first()
+
+    is_pro = bool(
+        subscription and
+        subscription.plan in ["pro", "enterprise"]
+    )
+
+    if is_pro:
+        return {
+            "plan": "pro",
+            "questions": hipaa_questions
+        }
+
+    return {
+        "plan": "free",
+        "questions": hipaa_questions[:10]
+    }
 # ----------------------------------
 # CORS
 # ----------------------------------
