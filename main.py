@@ -24,6 +24,7 @@ from stripe_webhook import router as stripe_webhook_router
 from report_api import router as report_router
 from auth import router as auth_router, get_current_user
 from hipaa_api import router as hipaa_router
+from webhook import router as webhook_router
 
 # DB
 from database import engine, get_db, Base
@@ -97,7 +98,7 @@ app.include_router(org_router)
 app.include_router(team_router)
 app.include_router(subscription_router)
 app.include_router(analytics_router)
-
+app.include_router(webhook_router)
 # ----------------------------------
 # ROOT
 # ----------------------------------
