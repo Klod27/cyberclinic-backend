@@ -2,81 +2,76 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+
 from datetime import datetime
 import logging
 import os
-import models
 import uuid
-from reportlab.graphics.shapes import Drawing
-from reportlab.graphics.charts.barcharts import VerticalBarChart
-# PDF
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
 
-# Routers
+import models
+
+# DATABASE
+from database import engine, get_db, Base
+
+# AUTH
+from auth import router as auth_router, get_current_user
+
+# ROUTERS
+from billing import router as billing_router
+from stripe_webhook import router as stripe_webhook_router
 from team_api import router as team_router
 from subscription_api import router as subscription_router
 from analytics_api import router as analytics_router
 from organization_api import router as org_router
 from automation_api import router as automation_router
-from billing import router as billing_router
-from stripe_webhook import router as stripe_webhook_router
 from report_api import router as report_router
-from auth import router as auth_router, get_current_user
 from hipaa_api import router as hipaa_router
 
-
-# DB
-from database import engine, get_db, Base
+# MODELS
 from models import AssessmentResult
+
+# QUESTIONS
 from hipaa_questions import hipaa_questions
 
+# REPORTLAB
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle
+)
+
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+
+
+# =====================================================
+# DATABASE INIT
+# =====================================================
 
 Base.metadata.create_all(bind=engine)
-# ----------------------------------
+
+# =====================================================
 # LOGGING
-# ----------------------------------
+# =====================================================
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ----------------------------------
-# DATABASE
-# ----------------------------------
-Base.metadata.create_all(bind=engine)
-
-# ----------------------------------
+# =====================================================
 # APP
-# ----------------------------------
-app = FastAPI(title="CyberClinic API", version="4.0.0")
-@app.get("/hipaa/questions")
-def get_questions(
-    current_user=Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
+# =====================================================
 
-    subscription = db.query(models.Subscription).filter(
-        models.Subscription.org_id == current_user.organization_id,
-        models.Subscription.is_active == True
-    ).first()
+app = FastAPI(
+    title="CyberClinic API",
+    version="4.0.0"
+)
 
-    is_pro = bool(
-        subscription and
-        subscription.plan in ["pro", "enterprise"]
-    )
-
-    if is_pro:
-        return {
-            "plan": "pro",
-            "questions": hipaa_questions
-        }
-
-    return {
-        "plan": "free",
-        "questions": hipaa_questions[:10]
-    }
-# ----------------------------------
+# =====================================================
 # CORS
-# ----------------------------------
+# =====================================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -85,9 +80,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ----------------------------------
+# =====================================================
 # ROUTERS
-# ----------------------------------
+# =====================================================
+
 app.include_router(auth_router)
 app.include_router(billing_router)
 app.include_router(report_router)
@@ -99,23 +95,60 @@ app.include_router(team_router)
 app.include_router(subscription_router)
 app.include_router(analytics_router)
 
-# ----------------------------------
+# =====================================================
 # ROOT
-# ----------------------------------
+# =====================================================
+
 @app.get("/")
 def root():
     return {"message": "CyberClinic API running"}
 
-# ----------------------------------
+# =====================================================
 # HEALTH
-# ----------------------------------
+# =====================================================
+
 @app.get("/health")
 def health():
     return {"status": "healthy"}
 
-# ----------------------------------
-# 🔥 CONTROL MAP (REAL HIPAA LOGIC)
-# ----------------------------------
+# =====================================================
+# HIPAA QUESTIONS
+# =====================================================
+
+@app.get("/hipaa/questions")
+def get_questions(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+
+    subscription = db.query(models.Subscription).filter(
+        models.Subscription.org_id == current_user.organization_id,
+        models.Subscription.is_active == True,
+        models.Subscription.status == "active"
+    ).first()
+
+    logger.info(f"USER ORG: {current_user.organization_id}")
+    logger.info(f"SUBSCRIPTION FOUND: {subscription}")
+
+    is_pro = (
+        subscription is not None and
+        subscription.plan in ["pro", "enterprise"]
+    )
+
+    iif subscription:
+    return {
+        "plan": subscription.plan or "pro",
+        "questions": hipaa_questions
+    }
+
+    return {
+        "plan": "pro",
+        "questions": hipaa_questions
+}
+
+# =====================================================
+# CONTROL MAP
+# =====================================================
 
 CONTROL_MAP = {
     1: {
@@ -148,9 +181,9 @@ CONTROL_MAP = {
     }
 }
 
-# ----------------------------------
-# 🔥 SCORING ENGINE
-# ----------------------------------
+# =====================================================
+# SCORING ENGINE
+# =====================================================
 
 def calculate_score(answers):
 
@@ -164,8 +197,6 @@ def calculate_score(answers):
     remediation = []
 
     for qid, obj in answers.items():
-
-        qid_str = str(qid)
 
         weight = obj.get("weight", 5)
         category = obj.get("category", "General")
@@ -190,21 +221,18 @@ def calculate_score(answers):
 
         if answer != "Yes":
 
-            control = {}
+            control = CONTROL_MAP.get(int(qid), {})
 
             severity = control.get("severity", "MEDIUM")
-
-            if answer == "No" and severity != "CRITICAL":
-                severity = "HIGH"
 
             findings.append({
                 "issue": control.get("title", f"Control {qid}"),
                 "control_id": control.get("control_id", f"CTRL-{qid}"),
-                "hipaa_reference": control.get("hipaa", "HIPAA Standard"),
+                "hipaa_reference": control.get("hipaa", "HIPAA"),
                 "severity": severity,
                 "category": category,
                 "status": "FAIL" if answer == "No" else "PARTIAL",
-                "description": f"{control.get('title')} not fully implemented"
+                "description": f"{control.get('title', 'Control')} not fully implemented"
             })
 
             remediation.append({
@@ -213,10 +241,16 @@ def calculate_score(answers):
                 "priority": severity
             })
 
-    score = round((earned_weight / total_weight) * 100, 2) if total_weight else 0
+    score = round(
+        (earned_weight / total_weight) * 100,
+        2
+    ) if total_weight else 0
 
     category_scores = {
-        cat: round((category_earned[cat] / category_totals[cat]) * 100, 2)
+        cat: round(
+            (category_earned[cat] / category_totals[cat]) * 100,
+            2
+        )
         for cat in category_totals
     }
 
@@ -227,11 +261,17 @@ def calculate_score(answers):
     else:
         risk = "HIGH"
 
-    return score, risk, category_scores, findings, remediation
+    return (
+        score,
+        risk,
+        category_scores,
+        findings,
+        remediation
+    )
 
-# ----------------------------------
-# 🔥 HIPAA SUBMIT (FINAL)
-# ----------------------------------
+# =====================================================
+# HIPAA SUBMIT
+# =====================================================
 
 @app.post("/hipaa/submit")
 def submit_hipaa_assessment(
@@ -240,16 +280,25 @@ def submit_hipaa_assessment(
 ):
 
     try:
+
         answers = payload.get("answers", {})
-        org_id = payload.get("org_id", None)
+        org_id = payload.get("org_id")
 
         if not answers:
-            raise HTTPException(status_code=400, detail="No answers provided")
+            raise HTTPException(
+                status_code=400,
+                detail="No answers provided"
+            )
 
-        score, risk, category_scores, findings, remediation = calculate_score(answers)
+        (
+            score,
+            risk,
+            category_scores,
+            findings,
+            remediation
+        ) = calculate_score(answers)
 
         result = AssessmentResult(
-            user_id=1,
             organization_id=org_id,
             overall_score=score,
             risk_level=risk,
@@ -258,6 +307,7 @@ def submit_hipaa_assessment(
 
         db.add(result)
         db.commit()
+        db.refresh(result)
 
         return {
             "status": "success",
@@ -272,54 +322,36 @@ def submit_hipaa_assessment(
         }
 
     except Exception as e:
+
         logger.error(str(e))
-        raise HTTPException(status_code=500, detail="Assessment failed")
-    
-def build_category_chart(category_scores):
-    drawing = Drawing(400, 200)
 
-    data = [list(category_scores.values())]
-    categories = list(category_scores.keys())
+        raise HTTPException(
+            status_code=500,
+            detail="Assessment failed"
+        )
 
-    chart = VerticalBarChart()
-    chart.x = 50
-    chart.y = 50
-    chart.height = 125
-    chart.width = 300
-
-    chart.data = data
-    chart.categoryAxis.categoryNames = categories
-
-    chart.bars[0].fillColor = colors.HexColor("#3b82f6")
-
-    drawing.add(chart)
-
-    return drawing
-
-def get_risk_color(score):
-    if score >= 85:
-        return colors.green
-    elif score >= 60:
-        return colors.orange
-    return colors.red
-# ----------------------------------
-# 🔥 PDF REPORT
-# ----------------------------------
-from reportlab.platypus import (
-     SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
-)
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
+# =====================================================
+# PDF REPORT GENERATION
+# =====================================================
 
 @app.post("/reports/generate")
 def generate_pdf_report(
     payload: dict,
+    db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
 
-    # ✅ SAFE PAYWALL
-    if getattr(current_user, "plan", "free") != "pro":
-        raise HTTPException(status_code=403, detail="Upgrade required")
+    subscription = db.query(models.Subscription).filter(
+        models.Subscription.org_id == current_user.organization_id,
+        models.Subscription.is_active == True,
+        models.Subscription.status == "active"
+    ).first()
+
+    if not subscription:
+        raise HTTPException(
+            status_code=403,
+            detail="Upgrade required"
+        )
 
     data = payload.get("data", {})
 
@@ -327,196 +359,138 @@ def generate_pdf_report(
     risk = data.get("risk", "UNKNOWN")
 
     report_id = str(uuid.uuid4())
-    file_path = f"reports/{report_id}.pdf"
 
     os.makedirs("reports", exist_ok=True)
 
+    file_path = f"reports/{report_id}.pdf"
+
     doc = SimpleDocTemplate(file_path)
+
     styles = getSampleStyleSheet()
+
     elements = []
 
-    # HEADER
-    elements.append(Paragraph(
-        "<b>CyberClinic HIPAA Compliance Report</b>",
-        styles["Title"]
-    ))
+    # TITLE
 
-    elements.append(Spacer(1, 15))
+    elements.append(
+        Paragraph(
+            "CyberClinic HIPAA Compliance Report",
+            styles["Title"]
+        )
+    )
 
-    # SUMMARY
+    elements.append(Spacer(1, 20))
+
+    # SUMMARY TABLE
+
     summary = [
         ["Metric", "Value"],
         ["Score", f"{score}%"],
-        ["Risk", risk],
-        ["Date", data.get("timestamp", "N/A")]
+        ["Risk Level", risk],
+        ["Generated", datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")]
     ]
 
     table = Table(summary)
+
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.black),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
     ]))
 
-    elements.append(Paragraph("<b>Executive Summary</b>", styles["Heading2"]))
-    elements.append(Spacer(1, 10))
     elements.append(table)
 
     elements.append(Spacer(1, 20))
 
-    # CATEGORY
-    elements.append(Paragraph("<b>Category Breakdown</b>", styles["Heading2"]))
-
-    for cat, val in data.get("category_scores", {}).items():
-        elements.append(Paragraph(f"{cat}: {val}%", styles["Normal"]))
-
-    elements.append(Spacer(1, 20))
-
-    # FINDINGS
-    elements.append(Paragraph("<b>Findings</b>", styles["Heading2"]))
-
-    for f in data.get("findings", []):
-        elements.append(Paragraph(
-            f"{f.get('issue')} ({f.get('severity')})",
-            styles["Normal"]
-        ))
-
-    elements.append(Spacer(1, 20))
-
-    # REMEDIATION
-    elements.append(Paragraph("<b>Remediation</b>", styles["Heading2"]))
-
-    for r in data.get("remediation", []):
-        elements.append(Paragraph(
-            f"{r.get('issue')} — {r.get('recommendation')}",
-            styles["Normal"]
-        ))
-
-    doc.build(elements)
-
-    return {
-        "status": "success",
-        "report_id": report_id,
-        "download_url": f"/reports/download/{report_id}"
-    }
-    # ---------------------------
-    # FOOTER
-    # ---------------------------
-    elements.append(Paragraph(
-        "<i>Generated by CyberClinic AI Compliance Platform</i>",
-        styles["Normal"]
-    ))
-
-    doc.build(elements)
-
-    return {
-        "status": "success",
-        "report_id": report_id,
-        "download_url": f"/reports/download/{report_id}"
-    }
-    # ---------------------------
-    # TITLE
-    # ---------------------------
-    elements.append(Paragraph(
-        "<b>CyberClinic HIPAA Compliance Assessment Report</b>",
-        styles["Title"]
-    ))
-
-    elements.append(Spacer(1, 12))
-
-    # ---------------------------
-    # EXECUTIVE SUMMARY
-    # ---------------------------
-    
-    score = data.get("score", 0)
-    risk = data.get("risk", "UNKNOWN")
-
-    elements.append(Paragraph("<b>Executive Summary</b>", styles["Heading2"]))
-
-    elements.append(Paragraph(
-        f"This report evaluates your organization's compliance posture "
-        f"against HIPAA Security Rule safeguards.",
-        styles["Normal"]
-    ))
-
-    elements.append(Spacer(1, 10))
-
-    elements.append(Paragraph(f"<b>Overall Score:</b> {score}%", styles["Normal"]))
-    elements.append(Paragraph(f"<b>Risk Level:</b> {risk}", styles["Normal"]))
-
-    elements.append(Spacer(1, 15))
-
-    # ---------------------------
     # CATEGORY SCORES
-    # ---------------------------
-    elements.append(Paragraph("<b>Category Breakdown</b>", styles["Heading2"]))
+
+    elements.append(
+        Paragraph(
+            "Category Breakdown",
+            styles["Heading2"]
+        )
+    )
 
     for cat, val in data.get("category_scores", {}).items():
-        elements.append(Paragraph(f"{cat}: {val}%", styles["Normal"]))
 
-    elements.append(Spacer(1, 15))
+        elements.append(
+            Paragraph(
+                f"{cat}: {val}%",
+                styles["Normal"]
+            )
+        )
 
-    # ---------------------------
+    elements.append(Spacer(1, 20))
+
     # FINDINGS
-    # ---------------------------
-    elements.append(Paragraph("<b>Key Findings</b>", styles["Heading2"]))
+
+    elements.append(
+        Paragraph(
+            "Key Findings",
+            styles["Heading2"]
+        )
+    )
 
     findings = data.get("findings", [])
 
     if not findings:
-        elements.append(Paragraph("No major findings identified.", styles["Normal"]))
+
+        elements.append(
+            Paragraph(
+                "No major findings identified.",
+                styles["Normal"]
+            )
+        )
 
     for f in findings:
 
-        severity = f.get("severity", "MEDIUM")
+        elements.append(
+            Paragraph(
+                f"{f.get('issue')} ({f.get('severity')})",
+                styles["Normal"]
+            )
+        )
 
-        elements.append(Paragraph(
-            f"<b>{f.get('issue')}</b> ({severity})",
-            styles["Normal"]
-        ))
+    elements.append(Spacer(1, 20))
 
-        elements.append(Paragraph(
-            f"Control: {f.get('control_id')} | HIPAA: {f.get('hipaa_reference')}",
-            styles["Normal"]
-        ))
+    # REMEDIATION
 
-        elements.append(Paragraph(
-            f"Description: {f.get('description')}",
-            styles["Normal"]
-        ))
-
-        elements.append(Spacer(1, 8))
-
-    elements.append(Spacer(1, 15))
-
-    # ---------------------------
-    # REMEDIATION PLAN
-    # ---------------------------
-    elements.append(Paragraph("<b>Recommended Remediation</b>", styles["Heading2"]))
+    elements.append(
+        Paragraph(
+            "Recommended Remediation",
+            styles["Heading2"]
+        )
+    )
 
     remediation = data.get("remediation", [])
 
     if not remediation:
-        elements.append(Paragraph("No remediation required.", styles["Normal"]))
+
+        elements.append(
+            Paragraph(
+                "No remediation required.",
+                styles["Normal"]
+            )
+        )
 
     for r in remediation:
-        elements.append(Paragraph(
-            f"{r.get('issue')} — {r.get('recommendation')} "
-            f"(Priority: {r.get('priority')})",
-            styles["Normal"]
-        ))
 
-    elements.append(Spacer(1, 20))
+        elements.append(
+            Paragraph(
+                f"{r.get('issue')} — {r.get('recommendation')}",
+                styles["Normal"]
+            )
+        )
 
-    # ---------------------------
-    # FOOTER
-    # ---------------------------
-    elements.append(Paragraph(
-        "Generated by CyberClinic AI Compliance Engine",
-        styles["Italic"]
-    ))
+    elements.append(Spacer(1, 30))
 
-    # BUILD PDF
+    elements.append(
+        Paragraph(
+            "Generated by CyberClinic AI Compliance Engine",
+            styles["Italic"]
+        )
+    )
+
     doc.build(elements)
 
     return {
@@ -525,18 +499,30 @@ def generate_pdf_report(
         "download_url": f"/reports/download/{report_id}"
     }
 
-# ----------------------------------
-# DOWNLOAD
-# ----------------------------------
+# =====================================================
+# DOWNLOAD REPORT
+# =====================================================
 
 @app.get("/reports/download/{report_id}")
 def download_report(report_id: str):
-    file_path = f"reports/{report_id}.pdf"
-    return FileResponse(file_path, media_type="application/pdf")
 
-# ----------------------------------
-# HISTORY
-# ----------------------------------
+    file_path = f"reports/{report_id}.pdf"
+
+    if not os.path.exists(file_path):
+
+        raise HTTPException(
+            status_code=404,
+            detail="Report not found"
+        )
+
+    return FileResponse(
+        file_path,
+        media_type="application/pdf"
+    )
+
+# =====================================================
+# REPORT HISTORY
+# =====================================================
 
 @app.get("/reports/history")
 def get_report_history(
@@ -545,8 +531,13 @@ def get_report_history(
 ):
 
     results = db.query(AssessmentResult)\
-        .filter(AssessmentResult.user_id == current_user.id)\
-        .order_by(AssessmentResult.created_at.desc())\
+        .filter(
+            AssessmentResult.organization_id ==
+            current_user.organization_id
+        )\
+        .order_by(
+            AssessmentResult.created_at.desc()
+        )\
         .all()
 
     return {

@@ -6,13 +6,25 @@ from datetime import datetime, timedelta
 
 from jose import jwt, JWTError
 
-SECRET_KEY = os.getenv("SECRET_KEY", "cyberclinic_demo_secret_key_change_later")
+# -----------------------------------
+# JWT CONFIG
+# -----------------------------------
+SECRET_KEY = os.getenv(
+    "SECRET_KEY",
+    "cyberclinic_demo_secret_key_change_later"
+)
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 12
 
 
+# -----------------------------------
+# PASSWORD HASHING
+# -----------------------------------
 def hash_password(password: str) -> str:
+
     salt = secrets.token_hex(16)
+
     hashed = hashlib.pbkdf2_hmac(
         "sha256",
         password.encode("utf-8"),
@@ -23,8 +35,13 @@ def hash_password(password: str) -> str:
     return f"pbkdf2_sha256${salt}${hashed}"
 
 
+# -----------------------------------
+# VERIFY PASSWORD
+# -----------------------------------
 def verify_password(password: str, stored_hash: str) -> bool:
+
     try:
+
         algorithm, salt, original_hash = stored_hash.split("$")
 
         if algorithm != "pbkdf2_sha256":
@@ -37,25 +54,53 @@ def verify_password(password: str, stored_hash: str) -> bool:
             100000
         ).hex()
 
-        return hmac.compare_digest(new_hash, original_hash)
+        return hmac.compare_digest(
+            new_hash,
+            original_hash
+        )
 
     except Exception:
         return False
 
 
-def create_access_token(user_id: int) -> str:
+# -----------------------------------
+# CREATE ACCESS TOKEN
+# -----------------------------------
+def create_access_token(user) -> str:
+
     payload = {
-        "user_id": user_id,
-        "exp": datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+        "sub": str(user.id),
+        "organization_id": user.organization_id,
+        "email": user.email,
+        "is_active": user.is_active,
+        "exp": datetime.utcnow() + timedelta(
+            hours=ACCESS_TOKEN_EXPIRE_HOURS
+        )
     }
 
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    token = jwt.encode(
+        payload,
+        SECRET_KEY,
+        algorithm=ALGORITHM
+    )
+
+    return token
 
 
+# -----------------------------------
+# VERIFY TOKEN
+# -----------------------------------
 def verify_token(token: str):
+
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload.get("user_id")
+
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM]
+        )
+
+        return payload
 
     except JWTError:
         return None

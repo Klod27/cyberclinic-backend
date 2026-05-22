@@ -44,7 +44,6 @@ router = APIRouter()
 # CREATE STRIPE CHECKOUT SESSION
 # ==================================
 
-
 @router.post("/billing/create-checkout-session")
 def create_checkout_session(
     mode: str = "subscription",
@@ -53,41 +52,50 @@ def create_checkout_session(
     current_user: User = Depends(get_current_user),
 ):
 
-    # ----------------------------------
+    # ==================================
     # VALIDATION
-    # ----------------------------------
+    # ==================================
 
     if not stripe.api_key:
         raise HTTPException(
             status_code=500,
-            detail="Stripe secret key is missing."
+            detail="Stripe secret key missing."
         )
 
     if mode == "subscription" and not STRIPE_PRICE_ID:
         raise HTTPException(
             status_code=500,
-            detail="STRIPE_PRICE_ID missing in .env"
+            detail="Missing STRIPE_PRICE_ID"
         )
 
     if mode == "report" and not STRIPE_REPORT_PRICE:
         raise HTTPException(
             status_code=500,
-            detail="STRIPE_REPORT_PRICE missing in .env"
+            detail="Missing STRIPE_REPORT_PRICE"
         )
 
     try:
 
         # ==================================
-        # CREATE STRIPE CUSTOMER
+        # CREATE / REUSE STRIPE CUSTOMER
         # ==================================
 
-        customer = stripe.Customer.create(
-            email=current_user.email,
-            metadata={
-                "user_id": str(current_user.id),
-                "organization_id": str(current_user.organization_id),
-            }
-        )
+        customer_id = current_user.stripe_customer_id
+
+        if not customer_id:
+
+            customer = stripe.Customer.create(
+                email=current_user.email,
+                metadata={
+                    "user_id": str(current_user.id),
+                    "organization_id": str(current_user.organization_id),
+                }
+            )
+
+            customer_id = customer.id
+
+            current_user.stripe_customer_id = customer_id
+            db.commit()
 
         # ==================================
         # SUBSCRIPTION CHECKOUT
@@ -99,7 +107,7 @@ def create_checkout_session(
 
                 mode="subscription",
 
-                customer=customer.id,
+                customer=customer_id,
 
                 payment_method_types=["card"],
 
@@ -116,13 +124,16 @@ def create_checkout_session(
 
                 metadata={
                     "type": "subscription",
+                    "plan": "pro",
                     "user_id": str(current_user.id),
                     "organization_id": str(current_user.organization_id),
                 }
             )
 
-            print("✅ CHECKOUT SESSION CREATED")
+            print("\n✅ SUBSCRIPTION SESSION CREATED")
             print("SESSION:", session.id)
+            print("USER:", current_user.id)
+            print("ORG:", current_user.organization_id)
 
             return {
                 "url": session.url,
@@ -130,7 +141,7 @@ def create_checkout_session(
             }
 
         # ==================================
-        # REPORT CHECKOUT
+        # REPORT PAYMENT
         # ==================================
 
         elif mode == "report":
@@ -138,7 +149,7 @@ def create_checkout_session(
             if not report_id:
                 raise HTTPException(
                     status_code=400,
-                    detail="report_id required."
+                    detail="report_id required"
                 )
 
             report = db.query(Report).filter(
@@ -148,14 +159,14 @@ def create_checkout_session(
             if not report:
                 raise HTTPException(
                     status_code=404,
-                    detail="Report not found."
+                    detail="Report not found"
                 )
 
             session = stripe.checkout.Session.create(
 
                 mode="payment",
 
-                customer=customer.id,
+                customer=customer_id,
 
                 payment_method_types=["card"],
 
@@ -168,7 +179,7 @@ def create_checkout_session(
 
                 success_url=f"{FRONTEND_URL}/dashboard?report=success",
 
-                cancel_url=f"{FRONTEND_URL}/pricing?report=cancelled",
+                cancel_url=f"{FRONTEND_URL}/dashboard?report=cancelled",
 
                 metadata={
                     "type": "report",
@@ -182,6 +193,9 @@ def create_checkout_session(
 
             db.commit()
 
+            print("\n✅ REPORT SESSION CREATED")
+            print("REPORT:", report.id)
+
             return {
                 "url": session.url,
                 "session_id": session.id
@@ -193,7 +207,7 @@ def create_checkout_session(
 
         raise HTTPException(
             status_code=400,
-            detail="Invalid checkout mode."
+            detail="Invalid mode"
         )
 
     except HTTPException:
@@ -201,7 +215,7 @@ def create_checkout_session(
 
     except Exception as e:
 
-        print("❌ STRIPE ERROR")
+        print("\n❌ STRIPE CHECKOUT ERROR")
         print(str(e))
 
         raise HTTPException(
