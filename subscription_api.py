@@ -18,13 +18,14 @@ def get_subscription_status(
     user=Depends(get_current_user)
 ):
 
+    # ONLY get ACTIVE subscription
     sub = db.query(Subscription).filter(
-        Subscription.org_id == user.organization_id
-    ).order_by(
-        Subscription.created_at.desc()
+        Subscription.org_id == user.organization_id,
+        Subscription.is_active == True
     ).first()
 
     if not sub:
+
         return {
             "plan": "free",
             "status": "inactive",
@@ -48,12 +49,20 @@ def activate_test_subscription(
     user=Depends(get_current_user)
 ):
 
-    # Remove old subscriptions
+    # -----------------------------------------
+    # REMOVE OLD SUBSCRIPTIONS
+    # -----------------------------------------
+
     db.query(Subscription).filter(
         Subscription.org_id == user.organization_id
     ).delete()
 
-    # Create new PRO subscription
+    db.commit()
+
+    # -----------------------------------------
+    # CREATE NEW ACTIVE PRO SUBSCRIPTION
+    # -----------------------------------------
+
     sub = Subscription(
         org_id=user.organization_id,
         plan="pro",
@@ -62,8 +71,26 @@ def activate_test_subscription(
     )
 
     db.add(sub)
+
     db.commit()
 
+    db.refresh(sub)
+
+    # -----------------------------------------
+    # VERIFY DATABASE SAVE
+    # -----------------------------------------
+
+    saved = db.query(Subscription).filter(
+        Subscription.org_id == user.organization_id,
+        Subscription.is_active == True
+    ).first()
+
     return {
-        "message": "Pro subscription activated successfully"
+        "message": "Pro subscription activated successfully",
+        "subscription": {
+            "org_id": saved.org_id,
+            "plan": saved.plan,
+            "status": saved.status,
+            "is_active": saved.is_active
+        }
     }
