@@ -224,14 +224,13 @@ def get_me(
 ):
 
     # -----------------------------------
-    # GET MOST RECENT ACTIVE SUBSCRIPTION
+    # GET MOST RECENT SUBSCRIPTION
     # -----------------------------------
 
     subscription = db.query(models.Subscription).filter(
-        models.Subscription.org_id == current_user.organization_id,
-        models.Subscription.is_active == True
+        models.Subscription.org_id == current_user.organization_id
     ).order_by(
-        models.Subscription.id.desc()
+        models.Subscription.created_at.desc()
     ).first()
 
     # -----------------------------------
@@ -243,7 +242,7 @@ def get_me(
     subscription_active = False
 
     # -----------------------------------
-    # ACTIVE SUBSCRIPTION FOUND
+    # SUBSCRIPTION FOUND
     # -----------------------------------
 
     if subscription:
