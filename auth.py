@@ -17,6 +17,7 @@ from auth_service import (
 # -----------------------------------
 # ROUTER
 # -----------------------------------
+
 router = APIRouter()
 
 security = HTTPBearer()
@@ -25,6 +26,7 @@ security = HTTPBearer()
 # -----------------------------------
 # REQUEST SCHEMAS
 # -----------------------------------
+
 class SignupRequest(BaseModel):
     email: str
     password: str
@@ -39,6 +41,7 @@ class LoginRequest(BaseModel):
 # -----------------------------------
 # SIGNUP
 # -----------------------------------
+
 @router.post("/auth/signup")
 def signup(
     data: SignupRequest,
@@ -50,6 +53,7 @@ def signup(
     ).first()
 
     if existing:
+
         raise HTTPException(
             status_code=400,
             detail="User already exists"
@@ -58,6 +62,7 @@ def signup(
     # -----------------------------------
     # CREATE ORGANIZATION
     # -----------------------------------
+
     org_name = data.name or data.email.split("@")[0]
 
     org = models.Organization(
@@ -65,12 +70,15 @@ def signup(
     )
 
     db.add(org)
+
     db.commit()
+
     db.refresh(org)
 
     # -----------------------------------
     # CREATE USER
     # -----------------------------------
+
     user = models.User(
         email=data.email,
         password_hash=hash_password(data.password),
@@ -80,12 +88,15 @@ def signup(
     )
 
     db.add(user)
+
     db.commit()
+
     db.refresh(user)
 
     # -----------------------------------
     # CREATE FREE SUBSCRIPTION
     # -----------------------------------
+
     subscription = models.Subscription(
         org_id=org.id,
         plan="free",
@@ -94,11 +105,13 @@ def signup(
     )
 
     db.add(subscription)
+
     db.commit()
 
     # -----------------------------------
-    # CREATE JWT TOKEN
+    # TOKEN
     # -----------------------------------
+
     token = create_access_token(user)
 
     return {
@@ -116,6 +129,7 @@ def signup(
 # -----------------------------------
 # LOGIN
 # -----------------------------------
+
 @router.post("/auth/login")
 def login(
     data: LoginRequest,
@@ -127,6 +141,7 @@ def login(
     ).first()
 
     if not user:
+
         raise HTTPException(
             status_code=401,
             detail="Invalid credentials"
@@ -136,14 +151,12 @@ def login(
         data.password,
         user.password_hash
     ):
+
         raise HTTPException(
             status_code=401,
             detail="Invalid credentials"
         )
 
-    # -----------------------------------
-    # CREATE JWT TOKEN
-    # -----------------------------------
     token = create_access_token(user)
 
     return {
@@ -160,6 +173,7 @@ def login(
 # -----------------------------------
 # CURRENT USER
 # -----------------------------------
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
@@ -170,6 +184,7 @@ def get_current_user(
     payload = verify_token(token)
 
     if not payload:
+
         raise HTTPException(
             status_code=401,
             detail="Invalid or expired token"
@@ -178,6 +193,7 @@ def get_current_user(
     user_id = payload.get("sub")
 
     if not user_id:
+
         raise HTTPException(
             status_code=401,
             detail="Invalid token payload"
@@ -188,6 +204,7 @@ def get_current_user(
     ).first()
 
     if not user:
+
         raise HTTPException(
             status_code=401,
             detail="User not found"
@@ -199,21 +216,30 @@ def get_current_user(
 # -----------------------------------
 # CURRENT SESSION INFO
 # -----------------------------------
+
 @router.get("/me")
 def get_me(
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
 
+    # -----------------------------------
+    # ONLY ACTIVE SUBSCRIPTION
+    # -----------------------------------
+
     subscription = db.query(models.Subscription).filter(
-        models.Subscription.org_id == current_user.organization_id
+        models.Subscription.org_id == current_user.organization_id,
+        models.Subscription.is_active == True
     ).first()
 
     plan = "free"
+
     subscription_active = False
 
     if subscription:
+
         plan = subscription.plan
+
         subscription_active = subscription.is_active
 
     return {
