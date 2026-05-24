@@ -18,11 +18,19 @@ def get_subscription_status(
     user=Depends(get_current_user)
 ):
 
-    # ONLY get ACTIVE subscription
+    # -----------------------------------------
+    # GET MOST RECENT SUBSCRIPTION
+    # -----------------------------------------
+
     sub = db.query(Subscription).filter(
-        Subscription.org_id == user.organization_id,
-        Subscription.is_active == True
+        Subscription.org_id == user.organization_id
+    ).order_by(
+        Subscription.created_at.desc()
     ).first()
+
+    # -----------------------------------------
+    # DEFAULT FREE PLAN
+    # -----------------------------------------
 
     if not sub:
 
@@ -31,6 +39,10 @@ def get_subscription_status(
             "status": "inactive",
             "is_active": False
         }
+
+    # -----------------------------------------
+    # RETURN SUBSCRIPTION
+    # -----------------------------------------
 
     return {
         "plan": sub.plan,
@@ -81,8 +93,9 @@ def activate_test_subscription(
     # -----------------------------------------
 
     saved = db.query(Subscription).filter(
-        Subscription.org_id == user.organization_id,
-        Subscription.is_active == True
+        Subscription.org_id == user.organization_id
+    ).order_by(
+        Subscription.created_at.desc()
     ).first()
 
     return {
