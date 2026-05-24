@@ -223,37 +223,33 @@ def get_me(
     db: Session = Depends(get_db)
 ):
 
-    # -----------------------------------
-    # GET MOST RECENT SUBSCRIPTION
-    # -----------------------------------
+    # -----------------------------------------
+    # GET ACTIVE SUBSCRIPTION
+    # -----------------------------------------
 
-    subscription = db.query(models.Subscription).filter(
-        models.Subscription.org_id == current_user.organization_id
-    ).order_by(
-        models.Subscription.created_at.desc()
+    sub = db.query(models.Subscription).filter(
+        models.Subscription.org_id == current_user.organization_id,
+        models.Subscription.is_active == True
     ).first()
 
-    # -----------------------------------
-    # DEFAULTS
-    # -----------------------------------
+    # -----------------------------------------
+    # DEFAULT VALUES
+    # -----------------------------------------
 
     plan = "free"
-
     subscription_active = False
 
-    # -----------------------------------
-    # SUBSCRIPTION FOUND
-    # -----------------------------------
+    # -----------------------------------------
+    # USE DATABASE VALUES IF FOUND
+    # -----------------------------------------
 
-    if subscription:
+    if sub:
+        plan = sub.plan
+        subscription_active = sub.is_active
 
-        plan = subscription.plan
-
-        subscription_active = subscription.is_active
-
-    # -----------------------------------
-    # RESPONSE
-    # -----------------------------------
+    # -----------------------------------------
+    # RETURN RESPONSE
+    # -----------------------------------------
 
     return {
         "id": current_user.id,
